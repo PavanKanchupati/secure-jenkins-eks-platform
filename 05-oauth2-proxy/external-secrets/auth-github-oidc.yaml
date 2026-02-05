@@ -1,0 +1,23 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: auth-github-oidc
+  namespace: auth
+spec:
+  secretStoreRef:
+    name: aws-secrets
+    kind: ClusterSecretStore
+
+  target:
+    name: auth-github-oidc-secret
+
+  data:
+    - secretKey: GITHUB_CLIENT_ID
+      remoteRef:
+        key: jenkins/github-oidc
+        property: client_id
+
+    - secretKey: GITHUB_CLIENT_SECRET
+      remoteRef:
+        key: jenkins/github-oidc
+        property: client_secret

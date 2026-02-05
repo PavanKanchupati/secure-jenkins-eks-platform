@@ -1,0 +1,502 @@
+# =========================================================
+# JENKINS CONTROLLER CONFIG
+# =========================================================
+
+controller:
+  componentName: "jenkins-controller"
+
+  # Controller runs on Java 17
+  image:
+    repository: jenkins/jenkins
+    tag: lts-jdk21
+    pullPolicy: IfNotPresent
+
+  # Disable local admin completely
+  admin:
+    createSecret: false
+    existingSecret: ""
+
+  numExecutors: 0
+  executorMode: NORMAL
+  disableRememberMe: false
+
+  # JVM & Jenkins startup options
+  javaOpts: >
+    -Djenkins.install.runSetupWizard=false
+    -Djava.awt.headless=true
+    -Xms1g
+    -Xmx4g
+
+  jenkinsOpts: "--webroot=/var/jenkins_cache/war"
+
+  # Public URL (OAuth redirect safe)
+  jenkinsUrl: "https://jenkins.kanchupati.com"
+
+  # =========================================================
+  # SECURITY CONTEXTS (SAFE — DOES NOT BREAK PLUGINS)
+  # =========================================================
+
+  usePodSecurityContext: true
+
+  podSecurityContextOverride:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    runAsNonRoot: true
+
+  containerSecurityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop: ["ALL"]
+
+  enableServiceLinks: false
+
+  # =========================================================
+  # RESOURCES
+  # =========================================================
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+
+  # =========================================================
+  # HEALTH PROBES (SAFE ENDPOINT)
+  # =========================================================
+
+  healthProbes: true
+
+  
+  startupProbe:
+    httpGet:
+      path: /
+      port: http
+    failureThreshold: 90
+    periodSeconds: 10
+  
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 300
+    periodSeconds: 30
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 180
+    periodSeconds: 20
+    failureThreshold: 3
+
+
+    
+
+  # =========================================================
+  # DISABLE CONFIG AUTO-RELOAD SIDECARS
+  # =========================================================
+
+  sidecars:
+    configAutoReload:
+      enabled: false
+
+  # =========================================================
+  # PLUGINS (PINNED — NO DRIFT)
+  # =========================================================
+
+  installPlugins:
+    - kubernetes
+    - workflow-aggregator
+    - workflow-job
+    - workflow-cps
+    - pipeline-model-definition
+    - configuration-as-code
+    - role-strategy
+    - git
+    - prometheus
+    - reverse-proxy-auth-plugin:245.v93f25b_b_b_3102
+
+  installLatestPlugins: false
+  overwritePlugins: false
+  overwritePluginsFromImage: false
+
+  # =========================================================
+  # JCasC — REVERSE PROXY HEADER AUTH (OAUTH2 PROXY) + TEAM RBAC
+  # =========================================================
+
+  JCasC:
+    defaultConfig: false
+    overwriteConfiguration: true
+
+    configScripts:
+      oauth-header-auth: |
+        jenkins:
+          systemMessage: "Enterprise Jenkins — OAuth2 Proxy ONLY"
+          numExecutors: 0
+
+          securityRealm:
+            reverseProxy:
+              forwardedUser: X-Auth-Request-User
+              forwardedEmail: X-Auth-Request-Email
+              forwardedDisplayName: X-Auth-Request-User
+              headerGroups: X-Auth-Request-Groups
+              headerGroupsDelimiter: ","
+
+          authorizationStrategy:
+            roleBased:
+              roles:
+                global:
+                  # =========================================================
+                  # GLOBAL ROLES (Base permissions for all authenticated users)
+                  # =========================================================
+                  - name: "authenticated"
+                    description: "Base permissions for all authenticated users"
+                    permissions:
+                      - "Overall/Read"
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Read"
+                      - "View/Read"
+                    entries:
+                      - group: "authenticated"
+
+                  - name: "readonly"
+                    description: "Read-only access"
+                    permissions:
+                      - "Overall/Read"
+                      - "Job/Read"
+                      - "View/Read"
+                    entries:
+                      - group: "readonly-users"
+
+                  # =========================================================
+                  # TEAM-SPECIFIC ROLES (Based on kanchupati-org teams)
+                  # =========================================================
+                  
+                  # BACKEND TEAM - Full access to backend jobs
+                  - name: "backend-team"
+                    description: "Backend team permissions"
+                    permissions:
+                      - "Overall/Read"
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Configure"
+                      - "Job/Create"
+                      - "Job/Delete"
+                      - "Job/Read"
+                      - "Job/Workspace"
+                      - "View/Configure"
+                      - "View/Create"
+                      - "View/Delete"
+                      - "View/Read"
+                      - "Credentials/View"
+                      - "Run/Delete"
+                      - "Run/Replay"
+                      - "Run/Update"
+                      - "SCM/Tag"
+                    entries:
+                      - group: "kanchupati-org:backend"
+
+                  # DEVSECOPS TEAM - Full pipeline/security access
+                  - name: "devsecops-team"
+                    description: "DevSecOps team permissions"
+                    permissions:
+                      - "Overall/Read"
+                      - "Overall/Manage"
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Configure"
+                      - "Job/Create"
+                      - "Job/Delete"
+                      - "Job/Read"
+                      - "Job/Workspace"
+                      - "View/Configure"
+                      - "View/Create"
+                      - "View/Delete"
+                      - "View/Read"
+                      - "Credentials/ManageDomains"
+                      - "Credentials/Update"
+                      - "Credentials/View"
+                      - "Credentials/Create"
+                      - "Credentials/Delete"
+                      - "Run/Delete"
+                      - "Run/Replay"
+                      - "Run/Update"
+                      - "SCM/Tag"
+                      - "Agent/Configure"
+                      - "Agent/Create"
+                      - "Agent/Delete"
+                      - "Agent/Disconnect"
+                    entries:
+                      - group: "kanchupati-org:devsecops"
+
+                  # FRONTEND TEAM - Full access to frontend jobs
+                  - name: "frontend-team"
+                    description: "Frontend team permissions"
+                    permissions:
+                      - "Overall/Read"
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Configure"
+                      - "Job/Create"
+                      - "Job/Delete"
+                      - "Job/Read"
+                      - "Job/Workspace"
+                      - "View/Configure"
+                      - "View/Create"
+                      - "View/Delete"
+                      - "View/Read"
+                      - "Credentials/View"
+                      - "Run/Delete"
+                      - "Run/Replay"
+                      - "Run/Update"
+                      - "SCM/Tag"
+                    entries:
+                      - group: "kanchupati-org:frontend"
+
+                  # PLATFORM-ADMIN TEAM - Full administrative access
+                  - name: "platform-admin-team"
+                    description: "Platform Admin - Full access"
+                    permissions:
+                      - "Overall/Administer"
+                      - "Overall/Read"
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Configure"
+                      - "Job/Create"
+                      - "Job/Delete"
+                      - "Job/Read"
+                      - "Job/Workspace"
+                      - "View/Configure"
+                      - "View/Create"
+                      - "View/Delete"
+                      - "View/Read"
+                      - "Credentials/ManageDomains"
+                      - "Credentials/Update"
+                      - "Credentials/View"
+                      - "Credentials/Create"
+                      - "Credentials/Delete"
+                      - "Run/Delete"
+                      - "Run/Replay"
+                      - "Run/Update"
+                      - "SCM/Tag"
+                      - "Agent/Configure"
+                      - "Agent/Create"
+                      - "Agent/Delete"
+                      - "Agent/Disconnect"
+                      - "Agent/Connect"
+                      - "Agent/Build"
+                      # Fixed: Changed Computer/* to Agent/* permissions
+                      - "Agent/Configure"
+                      - "Agent/Delete"
+                      - "Agent/Connect"
+                      - "Agent/Disconnect"
+                    entries:
+                      - group: "kanchupati-org:platform-admin"
+
+                  # QA TEAM - Build/read access only
+                  - name: "qa-team"
+                    description: "QA team permissions"
+                    permissions:
+                      - "Overall/Read"
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Read"
+                      - "Job/Workspace"
+                      - "View/Read"
+                      - "Run/Delete"
+                      - "Run/Replay"
+                      - "Run/Update"
+                    entries:
+                      - group: "kanchupati-org:qa"
+
+                  # SRE TEAM - Operational access
+                  - name: "sre-team"
+                    description: "SRE team permissions"
+                    permissions:
+                      - "Overall/Read"
+                      - "Overall/Manage"
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Configure"
+                      - "Job/Create"
+                      - "Job/Read"
+                      - "Job/Workspace"
+                      - "View/Configure"
+                      - "View/Create"
+                      - "View/Read"
+                      - "Credentials/View"
+                      - "Run/Delete"
+                      - "Run/Replay"
+                      - "Run/Update"
+                      - "SCM/Tag"
+                      - "Agent/Configure"
+                      - "Agent/Disconnect"
+                      # Fixed: Changed Computer/* to Agent/* permissions
+                      - "Agent/Configure"
+                      - "Agent/Disconnect"
+                    entries:
+                      - group: "kanchupati-org:sre"
+
+                # =========================================================
+                # ITEM ROLES (Project-level permissions)
+                # =========================================================
+                items:
+                  # Pattern: "team-.*" matches jobs starting with team name
+                  - name: "backend-jobs"
+                    pattern: "backend-.*"
+                    permissions:
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Configure"
+                      - "Job/Create"
+                      - "Job/Delete"
+                      - "Job/Read"
+                      - "Job/Workspace"
+                    entries:
+                      - group: "kanchupati-org:backend"
+                      - group: "kanchupati-org:devsecops"
+                      - group: "kanchupati-org:platform-admin"
+
+                  - name: "frontend-jobs"
+                    pattern: "frontend-.*"
+                    permissions:
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Configure"
+                      - "Job/Create"
+                      - "Job/Delete"
+                      - "Job/Read"
+                      - "Job/Workspace"
+                    entries:
+                      - group: "kanchupati-org:frontend"
+                      - group: "kanchupati-org:devsecops"
+                      - group: "kanchupati-org:platform-admin"
+
+                  - name: "qa-jobs"
+                    pattern: "qa-.*|test-.*"
+                    permissions:
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Read"
+                      - "Job/Workspace"
+                    entries:
+                      - group: "kanchupati-org:qa"
+                      - group: "kanchupati-org:devsecops"
+                      - group: "kanchupati-org:platform-admin"
+                      - group: "kanchupati-org:sre"
+
+                  - name: "sre-jobs"
+                    pattern: "sre-.*|monitoring-.*|infra-.*"
+                    permissions:
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Configure"
+                      - "Job/Create"
+                      - "Job/Delete"
+                      - "Job/Read"
+                      - "Job/Workspace"
+                    entries:
+                      - group: "kanchupati-org:sre"
+                      - group: "kanchupati-org:devsecops"
+                      - group: "kanchupati-org:platform-admin"
+
+          crumbIssuer:
+            standard:
+              excludeClientIPFromCrumb: true
+
+        unclassified:
+          location:
+            url: "https://jenkins.kanchupati.com"
+
+  # =========================================================
+  # SERVICE CONFIG
+  # =========================================================
+
+  serviceType: ClusterIP
+  servicePort: 8080
+  targetPort: 8080
+
+  agentListenerEnabled: true
+  agentListenerPort: 50000
+  agentListenerServiceType: ClusterIP
+
+  ingress:
+    enabled: false
+
+# =========================================================
+# SERVICE ACCOUNTS (YOU CREATED THESE)
+# =========================================================
+
+serviceAccount:
+  create: false
+  name: jenkins-sa
+
+serviceAccountAgent:
+  create: false
+  name: jenkins-agent-sa
+
+# =========================================================
+# EPHEMERAL AGENTS — JAVA 21 (NO TEMURIN)
+# =========================================================
+
+agent:
+  enabled: true
+  disableDefaultAgent: true
+  namespace: jenkins
+  containerCap: 10
+
+  podTemplates:
+    maven: |
+      - name: maven
+        label: maven
+        namespace: jenkins
+        serviceAccount: jenkins-agent-sa
+        nodeUsageMode: NORMAL
+        podRetention: Never
+        idleMinutes: 0
+
+        containers:
+          - name: maven
+            image: jenkins/inbound-agent:latest-jdk21
+            command: "/bin/sh -c"
+            args: "cat"
+            ttyEnabled: true
+            workingDir: /home/jenkins/agent
+
+            resourceRequestCpu: "500m"
+            resourceRequestMemory: "1Gi"
+            resourceLimitCpu: "2"
+            resourceLimitMemory: "2Gi"
+
+# =========================================================
+# STORAGE (EBS)
+# =========================================================
+
+persistence:
+  enabled: true
+  accessMode: ReadWriteOnce
+  size: 20Gi
+  storageClass: ebs-sc
+
+# =========================================================
+# RBAC (SAFE — NO SECRET READ)
+# =========================================================
+
+rbac:
+  create: true
+  readSecrets: false
+
+# =========================================================
+# NETWORK POLICY (OPTIONAL HARDENING)
+# =========================================================
+
+networkPolicy:
+  enabled: false

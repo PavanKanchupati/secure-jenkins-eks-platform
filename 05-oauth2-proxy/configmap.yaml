@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oauth2-proxy
+  namespace: auth
+data:
+  OAUTH2_PROXY_PROVIDER: github
+  OAUTH2_PROXY_REDIRECT_URL: "https://jenkins.kanchupati.com/oauth2/callback"
+  OAUTH2_PROXY_UPSTREAMS: "http://jenkins.jenkins.svc.cluster.local:8080"
+  OAUTH2_PROXY_SCOPE: "user:email read:org"
+  OAUTH2_PROXY_SKIP_AUTH_REGEX: "^/oauth2/.*"

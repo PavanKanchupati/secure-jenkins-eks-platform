@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy
+  namespace: auth
+  labels:
+    app: oauth2-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: oauth2-proxy
+  template:
+    metadata:
+      labels:
+        app: oauth2-proxy
+    spec:
+      serviceAccountName: oauth2-proxy-sa
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.14.2
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: jenkins-github-oidc-secret
+                  key: GITHUB_CLIENT_ID
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jenkins-github-oidc-secret
+                  key: GITHUB_CLIENT_SECRET
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-cookie
+                  key: cookie-secret
+
+                    #            - name: OAUTH2_PROXY_REDIS_CONNECTION_URL
+                    #   value: redis://redis-auth:6379/0
+
+
+            # Optional: If using Redis password
+            #  - name: OAUTH2_PROXY_REDIS_PASSWORD
+            # valueFrom:
+            #   secretKeyRef:
+            #     name: redis-auth-secret
+            #     key: redis-password        
+          args:
+            - --http-address=0.0.0.0:4180
+            - --upstream=file:///dev/null
+            - --provider=github
+            - --github-org=kanchupati-org
+            - --scope=user:email,read:org
+            - --email-domain=*
+            - --redirect-url=https://jenkins.kanchupati.com/oauth2/callback
+            - --skip-auth-regex=^/oauth2/(start|callback|sign_in|sign_out|userinfo|jwks)$
+            - --set-xauthrequest=true
+            - --set-authorization-header=true
+            - --pass-user-headers=true
+            - --pass-access-token=true
+            - --cookie-name=_oauth2_proxy
+            - --cookie-domain=kanchupati.com
+            - --cookie-secure=true
+            - --cookie-httponly=true
+            - --cookie-samesite=lax
+            # Redis Session Store Configuration (Airbnb approach)
+            - --session-store-type=redis
+            # - --redis-connection-url=redis://redis-auth:6379
+            # If using password with Redis:
+            # - --redis-connection-url=redis://:$(OAUTH2_PROXY_REDIS_PASSWORD)@redis-auth:6379/0
+            # - --redis-connection-url=redis://redis-auth:6379/0
+            # - --redis-password=$(OAUTH2_PROXY_REDIS_PASSWORD)
+            - --redis-connection-url=redis://:changeme123@redis-auth:6379/0  
+            # Cookie settings with Redis
+            - --cookie-expire=24h
+            - --cookie-refresh=1h
+            # - --cookie-persist=true
+            
+            # Additional settings for better Redis integration
+            - --redis-use-sentinel=false
+            # - --redis-sentinel-master-name=master
+            # - --redis-sentinel-connection-urls=redis://sentinel:26379
+              
+            #  - --cookie-expire=8h
+            # - --cookie-refresh=1h
+            - --skip-provider-button=true
+            - --show-debug-on-error=true
+            - --standard-logging=true
+            - --auth-logging=true
+            - --request-logging=true
+            - --user-id-claim=login  
+ #            - --github-team=kanchupati-org:backend
+ #           - --github-team=kanchupati-org:devsecops
+ #          - --github-team=kanchupati-org:frontend
+ #          - --github-team=kanchupati-org:platform-admin
+ #          - --github-team=kanchupati-org:qa
+ #          - --github-team=kanchupati-org:sre 
+          ports:
+            - containerPort: 4180
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
