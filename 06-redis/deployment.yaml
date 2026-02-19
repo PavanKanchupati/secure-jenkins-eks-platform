@@ -1,51 +1,96 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: redis-auth
   namespace: auth
-
 spec:
+  serviceName: redis-auth
   replicas: 1
-
   selector:
     matchLabels:
       app: redis
-
   template:
     metadata:
       labels:
         app: redis
-
     spec:
+      serviceAccountName: redis-sa
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: "OnRootMismatch"
+      terminationGracePeriodSeconds: 60
       containers:
         - name: redis
           image: redis:7.4-alpine
-
           ports:
             - containerPort: 6379
-
-          args:
-            - "--bind"
-            - "0.0.0.0"
-            - "--protected-mode"
-            - "no"
-            - "--requirepass"
-            - "changeme123"
-
-          readinessProbe:
-            tcpSocket:
-              port: 6379
-            initialDelaySeconds: 5
-
-          livenessProbe:
-            tcpSocket:
-              port: 6379
-            initialDelaySeconds: 20
-
+              name: redis
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth-secret
+                  key: redis-password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Start Redis with password from environment variable
+              exec redis-server /config/redis.conf --requirepass ${REDIS_PASSWORD}
           volumeMounts:
             - name: redis-data
               mountPath: /data
-
+            - name: redis-config
+              mountPath: /config
+            - name: redis-tls
+              mountPath: /tls
+              readOnly: true
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - -a
+                - $(REDIS_PASSWORD)
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - -a
+                - $(REDIS_PASSWORD)
+                - ping
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            capabilities:
+              drop: ["ALL"]
+              add: ["SETPCAP", "NET_BIND_SERVICE"]
       volumes:
-        - name: redis-data
-          emptyDir: {}
+        - name: redis-config
+          configMap:
+            name: redis-config
+        - name: redis-tls
+          secret:
+            secretName: redis-auth-secret
+            optional: true
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: ebs-sc
+        resources:
+          requests:
+            storage: 20Gi

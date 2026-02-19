@@ -1,0 +1,22 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-sc
+provisioner: efs.csi.aws.com
+
+parameters:
+  provisioningMode: efs-ap
+  fileSystemId: fs-04499b5cc5b0f7916 # replace with your EFS file system ID
+  directoryPerms: "700"
+
+  # Optional but recommended
+  gidRangeStart: "1000"
+  gidRangeEnd: "2000"
+  basePath: "/jenkins"
+
+mountOptions:
+  - tls
+
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+allowVolumeExpansion: true

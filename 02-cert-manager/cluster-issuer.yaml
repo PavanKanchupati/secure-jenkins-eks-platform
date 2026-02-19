@@ -4,7 +4,7 @@ metadata:
   name: letsencrypt-prod
 spec:
   acme:
-    email: caseyred33@gmail.com
+    email: caseyred33@gmail.com # replace with your email address for ACME registration and recovery contact
     server: https://acme-v02.api.letsencrypt.org/directory
 
     privateKeySecretRef:

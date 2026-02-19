@@ -4,8 +4,29 @@
 
 controller:
   componentName: "jenkins-controller"
+  
+  replicaCount: 1
 
-  # Controller runs on Java 17
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/component: jenkins-controller
+        topologyKey: kubernetes.io/hostname
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: jenkins-controller
+
+  # Controller runs on Java 21
   image:
     repository: jenkins/jenkins
     tag: lts-jdk21
@@ -72,14 +93,13 @@ controller:
 
   healthProbes: true
 
-  
   startupProbe:
     httpGet:
       path: /
       port: http
     failureThreshold: 90
     periodSeconds: 10
-  
+
   livenessProbe:
     httpGet:
       path: /
@@ -87,7 +107,7 @@ controller:
     initialDelaySeconds: 300
     periodSeconds: 30
     failureThreshold: 3
-  
+
   readinessProbe:
     httpGet:
       path: /
@@ -95,9 +115,6 @@ controller:
     initialDelaySeconds: 180
     periodSeconds: 20
     failureThreshold: 3
-
-
-    
 
   # =========================================================
   # DISABLE CONFIG AUTO-RELOAD SIDECARS
@@ -128,7 +145,7 @@ controller:
   overwritePluginsFromImage: false
 
   # =========================================================
-  # JCasC — REVERSE PROXY HEADER AUTH (OAUTH2 PROXY) + TEAM RBAC
+  # JCasC — REVERSE PROXY HEADER AUTH (OAUTH2 PROXY) + TEAM RBAC + K8S CLOUD
   # =========================================================
 
   JCasC:
@@ -293,11 +310,6 @@ controller:
                       - "Agent/Disconnect"
                       - "Agent/Connect"
                       - "Agent/Build"
-                      # Fixed: Changed Computer/* to Agent/* permissions
-                      - "Agent/Configure"
-                      - "Agent/Delete"
-                      - "Agent/Connect"
-                      - "Agent/Disconnect"
                     entries:
                       - group: "kanchupati-org:platform-admin"
 
@@ -337,9 +349,6 @@ controller:
                       - "Run/Replay"
                       - "Run/Update"
                       - "SCM/Tag"
-                      - "Agent/Configure"
-                      - "Agent/Disconnect"
-                      # Fixed: Changed Computer/* to Agent/* permissions
                       - "Agent/Configure"
                       - "Agent/Disconnect"
                     entries:
@@ -416,6 +425,87 @@ controller:
           location:
             url: "https://jenkins.kanchupati.com"
 
+      # =========================================================
+      # KUBERNETES CLOUD CONFIGURATION
+      # =========================================================
+      kubernetes-cloud: |
+        jenkins:
+          clouds:
+            - kubernetes:
+                name: "kubernetes"
+                serverUrl: "https://kubernetes.default.svc"
+                skipTlsVerify: true
+                namespace: "jenkins"
+                jenkinsUrl: "http://jenkins:8080"
+                jenkinsTunnel: "jenkins-agent:50000"
+                podLabels:
+                  - key: "jenkins/agent"
+                    value: "true"
+                templates:
+                  - name: "backend-maven"
+                    label: "backend-maven"
+                    namespace: "jenkins"
+                    serviceAccount: "jenkins-agent-sa"
+                    nodeSelector: "workload=backend"
+                    containers:
+                      - name: "maven"
+                        image: "maven:3.9-eclipse-temurin-21"
+                        command: "cat"
+                        ttyEnabled: true
+                        resourceRequestCpu: "500m"
+                        resourceRequestMemory: "1Gi"
+                        resourceLimitCpu: "2"
+                        resourceLimitMemory: "2Gi"
+                      - name: "jnlp"
+                        image: "jenkins/inbound-agent:latest-jdk21"
+                        args: "${computer.jnlpmac} ${computer.name}"
+                        resourceRequestCpu: "200m"
+                        resourceRequestMemory: "256Mi"
+                        resourceLimitCpu: "500m"
+                        resourceLimitMemory: "512Mi"
+                  - name: "frontend-node"
+                    label: "frontend-node"
+                    namespace: "jenkins"
+                    serviceAccount: "jenkins-agent-sa"
+                    nodeSelector: "workload=frontend"
+                    containers:
+                      - name: "node"
+                        image: "node:20-slim"
+                        command: "cat"
+                        ttyEnabled: true
+                        resourceRequestCpu: "500m"
+                        resourceRequestMemory: "1Gi"
+                        resourceLimitCpu: "2"
+                        resourceLimitMemory: "2Gi"
+                      - name: "jnlp"
+                        image: "jenkins/inbound-agent:latest-jdk21"
+                        args: "${computer.jnlpmac} ${computer.name}"
+                        resourceRequestCpu: "200m"
+                        resourceRequestMemory: "256Mi"
+                        resourceLimitCpu: "500m"
+                        resourceLimitMemory: "512Mi"
+                  - name: "devops-tools"
+                    label: "devops-tools"
+                    namespace: "jenkins"
+                    serviceAccount: "jenkins-agent-sa"
+                    nodeSelector: "workload=devops"
+                    containers:
+                      - name: "tools"
+                        image: "alpine/k8s:1.29.0"
+                        command: "cat"
+                        ttyEnabled: true
+                        resourceRequestCpu: "500m"
+                        resourceRequestMemory: "1Gi"
+                        resourceLimitCpu: "2"
+                        resourceLimitMemory: "2Gi"
+                      - name: "jnlp"
+                        image: "jenkins/inbound-agent:latest-jdk21"
+                        args: "${computer.jnlpmac} ${computer.name}"
+                        resourceRequestCpu: "200m"
+                        resourceRequestMemory: "256Mi"
+                        resourceLimitCpu: "500m"
+                        resourceLimitMemory: "512Mi"
+
   # =========================================================
   # SERVICE CONFIG
   # =========================================================
@@ -444,7 +534,7 @@ serviceAccountAgent:
   name: jenkins-agent-sa
 
 # =========================================================
-# EPHEMERAL AGENTS — JAVA 21 (NO TEMURIN)
+# EPHEMERAL AGENTS — JAVA 21
 # =========================================================
 
 agent:
@@ -453,39 +543,19 @@ agent:
   namespace: jenkins
   containerCap: 10
 
-  podTemplates:
-    maven: |
-      - name: maven
-        label: maven
-        serviceAccount: jenkins-agent-sa
-        containers:
-          - name: jnlp
-            image: jenkins/inbound-agent:latest-jdk21
-            args: "$(JENKINS_SECRET) $(JENKINS_NAME)"
-            resourceRequestCpu: "200m"
-            resourceRequestMemory: "256Mi"
-            resourceLimitCpu: "500m"
-            resourceLimitMemory: "512Mi"
-          - name: maven
-            image: maven:3.9-eclipse-temurin-21
-            command: "/bin/sh -c"
-            args: "cat"
-            ttyEnabled: true
-            workingDir: /home/jenkins/agent
-            resourceRequestCpu: "500m"
-            resourceRequestMemory: "1Gi"
-            resourceLimitCpu: "2"
-            resourceLimitMemory: "2Gi"
+  # Note: podTemplates here are commented out because they're now defined in JCasC
+  # This ensures single source of truth
+  podTemplates: {}
 
 # =========================================================
-# STORAGE (EBS)
+# STORAGE (EFS)
 # =========================================================
 
 persistence:
   enabled: true
-  accessMode: ReadWriteOnce
+  accessMode: ReadWriteMany
   size: 20Gi
-  storageClass: ebs-sc
+  storageClass: efs-sc
 
 # =========================================================
 # RBAC (SAFE — NO SECRET READ)

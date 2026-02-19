@@ -14,10 +14,10 @@ spec:
   data:
     - secretKey: GITHUB_CLIENT_ID
       remoteRef:
-        key: jenkins/github-oidc
+        key: jenkins/github-oidc # replace with your secret name in AWS Secrets Manager
         property: client_id
 
     - secretKey: GITHUB_CLIENT_SECRET
       remoteRef:
-        key: jenkins/github-oidc
+        key: jenkins/github-oidc # replace with your secret name in AWS Secrets Manager
         property: client_secret

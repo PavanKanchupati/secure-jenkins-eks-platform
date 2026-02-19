@@ -1,0 +1,88 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jenkins-network-policy
+  namespace: jenkins
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: jenkins-controller
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow from ingress-nginx for web traffic
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 50000
+  
+  # Allow from OAuth2 proxy in auth namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: auth
+      podSelector:
+        matchLabels:
+          app: oauth2-proxy
+    ports:
+    - protocol: TCP
+      port: 8080
+  
+  # Allow Jenkins pods to talk to themselves (for probes, clustering)
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: jenkins-controller
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 50000
+  
+  egress:
+  # Allow DNS
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  
+  # Allow to Kubernetes API
+  - to:
+    - ipBlock:
+        cidr: 10.100.0.0/16  # Adjust based on your cluster API CIDR
+    ports:
+    - protocol: TCP
+      port: 443
+  
+  # Allow to Jenkins agents
+  - to:
+    - podSelector:
+        matchLabels:
+          jenkins/agent: "true"
+    ports:
+    - protocol: TCP
+      port: 50000
+  
+  # Allow to EFS/AWS services
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+    ports:
+    - protocol: TCP
+      port: 2049  # EFS
+    - protocol: TCP
+      port: 443   # AWS APIs

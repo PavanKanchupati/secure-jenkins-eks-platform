@@ -24,12 +24,12 @@ spec:
             - name: OAUTH2_PROXY_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: jenkins-github-oidc-secret
+                  name: jenkins-github-oidc
                   key: GITHUB_CLIENT_ID
             - name: OAUTH2_PROXY_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: jenkins-github-oidc-secret
+                  name: jenkins-github-oidc
                   key: GITHUB_CLIENT_SECRET
             - name: OAUTH2_PROXY_COOKIE_SECRET
               valueFrom:
@@ -46,7 +46,12 @@ spec:
             # valueFrom:
             #   secretKeyRef:
             #     name: redis-auth-secret
-            #     key: redis-password        
+            #     key: redis-password 
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth-secret
+                  key: redis-password
           args:
             - --http-address=0.0.0.0:4180
             - --upstream=file:///dev/null
@@ -72,7 +77,9 @@ spec:
             # - --redis-connection-url=redis://:$(OAUTH2_PROXY_REDIS_PASSWORD)@redis-auth:6379/0
             # - --redis-connection-url=redis://redis-auth:6379/0
             # - --redis-password=$(OAUTH2_PROXY_REDIS_PASSWORD)
-            - --redis-connection-url=redis://:changeme123@redis-auth:6379/0  
+            # - --redis-connection-url=redis://:changeme123@redis-auth:6379/0  
+            - --redis-connection-url=redis://:$(REDIS_PASSWORD)@redis-auth:6379/0
+            - --redis-use-sentinel=false
             # Cookie settings with Redis
             - --cookie-expire=24h
             - --cookie-refresh=1h
